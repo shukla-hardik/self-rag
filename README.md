@@ -28,19 +28,17 @@ flowchart TD
     C -->|need_retrieval: false| K[generate_direct]
 
     D --> E[context_relevance_checker]
-
     E -->|relevant docs found| F[generate_from_context]
     E -->|no relevant docs| J[no_answer_found]
 
     F --> G[answer_relevance_checker]
-
     G -->|FULLY_SUPPORTED| H[check_answer_usefulness]
     G -->|PARTIALLY / NOT_SUPPORTED| G2[rewrite_answer]
     G2 -->|max 3 iterations| G
 
-    H -->|is_useful: true| I[stream_answer]
-    H -->|is_useful: false, retries left| L[rewrite_question]
-    H -->|is_useful: false, max retries| J
+    H -->|useful| I[stream_answer]
+    H -->|retries left| L[rewrite_question]
+    H -->|max retries| J
 
     L --> D
 
