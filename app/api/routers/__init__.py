@@ -22,6 +22,18 @@ private_router.include_router(document_router, prefix="/document",
 private_router.include_router(thread_router, prefix="/thread",
                               tags=["Threads"])
 
+# ADMIN — Bearer token + admin role (enforced by AuthMiddleware)
+admin_router = APIRouter(
+    prefix=f"/{RouteType.ADMIN}", dependencies=[Security(api_key_header)]
+)
+
+# INTERNAL — static INTERNAL_TOKEN header (enforced by AuthMiddleware)
+internal_router = APIRouter(
+    prefix=f"/{RouteType.INTERNAL}", dependencies=[Security(api_key_header)]
+)
+
 v1_api_router.include_router(public_router)
 v1_api_router.include_router(private_router)
+v1_api_router.include_router(admin_router)
+v1_api_router.include_router(internal_router)
 v1_api_router.include_router(health_router, tags=["Health"])
