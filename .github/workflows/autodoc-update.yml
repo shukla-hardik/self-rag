@@ -1,14 +1,65 @@
 name: AutoDoc Update
 
-on: 
+on:
   pull_request_review:
     types: [submitted]
 
 jobs:
-  update:                                                                     
+  update:
     runs-on: ubuntu-latest
     if: github.event.review.state == 'approved'
     environment: autodoc-approval
-    permissions:                                                                               
-        pull-requests: write                                                                     
-        contents: write  
+    permissions:
+      pull-requests: write
+      contents: write
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+      GH_APP_ID: ${{ secrets.GH_APP_ID }}
+      GH_APP_INSTALLATION_ID: ${{ secrets.GH_APP_INSTALLATION_ID }}
+      GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+      LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: Hard-Builds
+          repositories: autodoc-agent
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Hard-Builds/autodoc-agent
+          path: autodoc-agent
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+
+      - name: Cache uv virtualenv
+        uses: actions/cache@v4
+        with:
+          path: autodoc-agent/.venv
+          key: venv-${{ runner.os }}-${{ hashFiles('autodoc-agent/uv.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-
+
+      - name: Install dependencies
+        working-directory: autodoc-agent
+        run: uv sync
+
+      - name: Download Checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: checkpoint-${{ github.event.pull_request.number }}
+          path: autodoc-agent
+
+      - name: Run update
+        working-directory: autodoc-agent
+        run: |
+          uv run python main.py --owner "${{ github.event.repository.owner.login }}" --repo "${{ github.event.repository.name }}" --pr "${{ github.event.pull_request.number }}" --mode update

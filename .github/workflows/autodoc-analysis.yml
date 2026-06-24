@@ -4,12 +4,21 @@ on:
   pull_request:                                                                                
     types: [opened, synchronize]                                                               
                                                                                                
-jobs:                                                                                          
-  analyze:                                                                                     
-    runs-on: ubuntu-latest                                                                     
-    permissions:                                                                               
-      pull-requests: write                                                                     
-      contents: read                                                                           
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+      GH_APP_ID: ${{ secrets.GH_APP_ID }}
+      GH_APP_INSTALLATION_ID: ${{ secrets.GH_APP_INSTALLATION_ID }}
+      GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+      LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -42,19 +51,10 @@ jobs:
         working-directory: autodoc-agent                                                       
         run: uv sync                                                                           
                                                                                                
-      - name: Run analysis                                                                     
-        working-directory: autodoc-agent                                                       
-        env:                                                                                   
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}                                        
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}                                            
-          GH_APP_ID: ${{ secrets.GH_APP_ID }}                                                  
-          GH_APP_INSTALLATION_ID: ${{ secrets.GH_APP_INSTALLATION_ID }}                        
-          GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          LANGSMITH_PROJECT: ${{ secrets.LANGSMITH_PROJECT }}
-          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-          LANGSMITH_TRACING: ${{ secrets.LANGSMITH_TRACING }}
-        run: |                                                                                 
-            uv run python main.py --owner "${{ github.event.repository.owner.login }}" --repo "${{ github.event.repository.name }}" --pr "${{ github.event.pull_request.number }}" --mode analyze                                                                     
+      - name: Run analysis
+        working-directory: autodoc-agent
+        run: |
+          uv run python main.py --owner "${{ github.event.repository.owner.login }}" --repo "${{ github.event.repository.name }}" --pr "${{ github.event.pull_request.number }}" --mode analyze                                                                     
                                                                                                  
       - name: Upload Checkpoint                                                                
         uses: actions/upload-artifact@v4                                                       
