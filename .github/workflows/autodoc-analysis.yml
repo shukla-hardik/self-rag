@@ -7,7 +7,7 @@ on:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    if: github.event.sender.login != 'hardik-auto-doc-agent'
+    if: github.event.sender.login != 'hardik-auto-doc-agent' && github.event.sender.login != 'hardik-auto-doc-agent[bot]'
     environment: autodoc-approval
     permissions:
       pull-requests: write
