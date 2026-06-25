@@ -1,6 +1,8 @@
 # Self-RAG — NexaAI Assistant
 
-A production-ready **Self-Retrieval-Augmented Generation** API built for **NexaAI**, a dummy company used as the knowledge base for this project. The bot answers questions about NexaAI by grounding every response in three internal PDF documents:
+> **Learning project** — built to understand and implement the Self-RAG paper from scratch. The NexaAI company and its documents are fictional, used purely as a realistic knowledge base to exercise the retrieval and grading pipeline.
+
+A **Self-Retrieval-Augmented Generation** API built around **NexaAI**, a dummy company used as the knowledge base for this project. The bot answers questions about NexaAI by grounding every response in three internal PDF documents:
 
 | Document | Contents |
 |---|---|
@@ -14,6 +16,17 @@ Built with **FastAPI**, **LangGraph**, **PostgreSQL + pgvector**, and **Google G
 
 > Based on the paper: **Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection**
 > Asai et al., 2023 — [arxiv.org/pdf/2310.11511](https://arxiv.org/pdf/2310.11511)
+
+### The 4 Questions Self-RAG Answers
+
+Standard RAG retrieves and generates blindly. Self-RAG adds a critique loop that asks four questions at every step:
+
+| # | Question | Answered by |
+|---|---|---|
+| 1 | **Should I even retrieve?** | `should_retrieve` — skips vector search for conversational or general questions |
+| 2 | **Are the retrieved docs actually relevant?** | `context_relevance_checker` — grades each chunk independently and discards irrelevant ones |
+| 3 | **Is the answer grounded in the context?** | `answer_relevance_checker` — detects hallucinations and rewrites the answer if unsupported |
+| 4 | **Does the answer actually address the question?** | `check_answer_usefulness` — catches on-topic-but-unhelpful answers and retries with a rewritten query |
 
 ---
 
