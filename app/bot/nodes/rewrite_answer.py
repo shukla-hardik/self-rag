@@ -3,7 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate, \
     HumanMessagePromptTemplate
 
 from app.bot import RAGState
-from app.bot.llm import llm_model, str_parser
+from app.bot.llm import llm_model, llm_retry, str_parser
 from app.core import logger
 
 _MAX_ANS_ITERATION = 3
@@ -50,7 +50,7 @@ async def rewrite_answer(state: RAGState):
         )
     ])
     chain = prompt | llm_model | str_parser
-    response = await chain.ainvoke({
+    response = await llm_retry(chain.ainvoke)({
         "question": state["question"],
         "answer": state["answer"],
         "context": state["context_str"]

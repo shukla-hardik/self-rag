@@ -2,7 +2,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
 
 from app.bot import RAGState
-from app.bot.llm import llm_model
+from app.bot.llm import llm_model, llm_retry
 
 _MAX_QUE_ITERATION = 3
 
@@ -22,8 +22,9 @@ class RewriteDecision(BaseModel):
 
 
 async def rewrite_question(state: RAGState):
-    response = await llm_model.with_structured_output(RewriteDecision).ainvoke(
-        [
+    response = await llm_retry(
+        llm_model.with_structured_output(RewriteDecision).ainvoke
+    )([
             SystemMessage(
                 "Rewrite the user's QUESTION into a query optimized for vector retrieval over INTERNAL company PDFs.\n\n"
                 "Rules:\n"

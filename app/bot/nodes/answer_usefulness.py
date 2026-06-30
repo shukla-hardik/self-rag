@@ -2,7 +2,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
 
 from app.bot import RAGState
-from app.bot.llm import llm_model
+from app.bot.llm import llm_model, llm_retry
 from app.core import logger
 
 
@@ -13,9 +13,9 @@ class AnswerUsefulModel(BaseModel):
 
 async def check_answer_usefulness(state: RAGState):
     logger.info("Checking for the answer's usefulness...")
-    response: AnswerUsefulModel = await llm_model.with_structured_output(
-        AnswerUsefulModel
-    ).ainvoke([
+    response: AnswerUsefulModel = await llm_retry(
+        llm_model.with_structured_output(AnswerUsefulModel).ainvoke
+    )([
         SystemMessage(
             # v2 — fallback string guardrails, concrete examples for borderline cases
             "You are judging whether the ANSWER actually addresses what the user asked in QUESTION.\n\n"
