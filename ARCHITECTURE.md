@@ -17,7 +17,6 @@ Self-RAG is a production-grade Retrieval-Augmented Generation API that wraps a L
 │                    FastAPI App                          │
 │  Middleware: APITraceMiddleware → AuthMiddleware        │
 │  Routers:  /api/v1/threads/**   /api/v1/documents/**    │
-│            /api/v1/admin/**     /api/v1/internal/**     │
 │  Static:   SPA at /chat/**                              │
 └──────┬──────────────────────────────────┬───────────────┘
        │ ainvoke (LangGraph)               │ .delay (Celery)
@@ -52,8 +51,6 @@ app/
 │   ├── routers/             # HTTP route definitions
 │   │   ├── thread.py        # GET /threads, GET /threads/{id}, POST /threads/{id}/query
 │   │   ├── document.py      # POST /documents/upload, GET, DELETE
-│   │   ├── admin.py         # Admin-only operations (Bearer + role)
-│   │   └── internal.py      # Internal service operations (Static token)
 │   ├── controller/          # Business logic called by routers
 │   │   ├── thread.py        # Runs the RAG graph, manages asyncio.Queue for streaming
 │   │   └── document.py      # Validates PDF, saves file, enqueues Celery task
@@ -81,7 +78,7 @@ app/
 │
 ├── middlewares/
 │   ├── api_trace.py         # Request ID injection, latency logging
-│   └── auth.py              # AuthMiddleware (handles Bearer token/Admin role/Internal token)
+│   └── auth.py              # AuthMiddleware (handles Bearer token/Internal token)
 │
 └── core/
     ├── config.py            # Pydantic Settings (env vars)
@@ -123,7 +120,7 @@ app/
 | `no_answer_found` | `no_answer_found.py` | Terminal: writes "no answer" message to DB and signals stream end |
 | `generate_from_context` | `generate_from_context.py` | Generates `answer` from `context_str`; sets `ans_iteration = 0` |
 | `answer_relevance_checker` | `answer_relevance_checker.py` | Grades `answer` as FULLY / PARTIALLY / NOT supported by context |
-| `rewrite_answer` | `rewrite_answer.py` | Revises answer to use only direct context quotes; increments `ans_iteration` |
+| `rewrite_answer` | `rewrite_answer.py` | Revises answer to use only direct quotes from the context; increments `ans_iteration` |
 | `check_answer_usefulness` | `answer_usefulness.py` | LLM checks if answer actually addresses the question |
 | `rewrite_question` | `rewrite_question.py` | Rewrites `retrieval_query` for better vector recall; increments `rewrite_tries`; clears `docs`/`relevant_docs`/`context_str` |
 | `stream_answer` | `stream_answer.py` | Pushes final `answer` to `stream_queue`; writes DB message |
@@ -221,4 +218,4 @@ POST /api/v1/documents/upload
 - **LangGraph checkpointer**: `AsyncPostgresSaver` stores the full graph state per `thread_id`, enabling multi-turn conversations that resume exactly where they left off.
 - **Celery + AsyncIO pool**: The ingestion worker uses `celery_aio_pool` so async coroutines (embedding API calls, DB writes) work natively inside Celery tasks.
 - **Dual loop max = 3**: Both `_MAX_ANS_ITERATION` and `_MAX_QUE_ITERATION` are hardcoded to 3, bounding worst-case LLM calls per query to ~20.
-- **Security Scopes**: Multi-layered access control with separate routers for Public, Private, Admin (RBAC), and Internal (Service token) traffic.
+- **Security Scopes**: Access control enforced via AuthMiddleware (Bearer token).
