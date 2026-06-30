@@ -1,0 +1,24 @@
+# NexaAI Solutions — retrieval evaluation test set
+# Documents: Company_Profile.pdf, Company_Policies.pdf, Product_and_Pricing.pdf
+# 16 chunks across 3 documents; queries cover all three files.
+
+{"query": "When was NexaAI Solutions founded and where is it headquartered?", "relevant": ["Founded: 2021", "Bengaluru"]}
+{"query": "How many employees does NexaAI have?", "relevant": ["85+"]}
+{"query": "What is the vision of NexaAI Solutions?", "relevant": ["trusted AI partner", "intelligent decision-making"]}
+{"query": "Who is the founder of NexaAI and what is his background?", "relevant": ["Aarav Mehta", "enterprise data platforms"]}
+{"query": "What are the core values of NexaAI?", "relevant": ["Customer Obsession", "Transparency"]}
+{"query": "How many sick leave days are employees entitled to per year?", "relevant": ["Sick Leave", "10 working days"]}
+{"query": "What is NexaAI's policy on casual leave?", "relevant": ["Casual Leave", "6 working days"]}
+{"query": "What disciplinary actions can be taken for policy violations?", "relevant": ["Written warning", "Suspension", "Termination"]}
+{"query": "What is the maternity leave policy at NexaAI?", "relevant": ["Maternity Leave", "statutory"]}
+{"query": "How are unused annual leaves handled?", "relevant": ["carried forward", "30 days"]}
+{"query": "What products does NexaAI offer?", "relevant": ["NexaChat", "NexaInsight", "NexaSupport", "NexaSecure"]}
+{"query": "What is the price of the Starter Plan?", "relevant": ["2,499", "Starter Plan"]}
+{"query": "What is included in the Professional Plan?", "relevant": ["5,999", "NexaChat", "NexaInsight", "NexaSupport"]}
+{"query": "What discount is available for annual billing?", "relevant": ["15%", "Annual billing"]}
+{"query": "What does NexaSupport do?", "relevant": ["customer support", "escalating", "human agents"]}
+{"query": "What governance features does NexaSecure provide?", "relevant": ["audit trails", "compliance", "IAM"]}
+{"query": "What document formats does NexaChat support?", "relevant": ["PDFs", "Word documents", "presentations"]}
+{"query": "What analytics capabilities does NexaInsight provide?", "relevant": ["natural language", "explainable insights", "BI tools"]}
+{"query": "What regions does NexaAI operate in?", "relevant": ["Southeast Asia", "Europe", "India"]}
+{"query": "What is NexaAI's policy on workplace conduct?", "relevant": ["professionally", "ethically", "confidentiality"]}
