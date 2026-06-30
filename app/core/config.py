@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = 10
     MAX_CHAT_HISTORY: int = 6
 
-    CHUNK_SIZE: int = 600
-    CHUNK_OVERLAP: int = 150
+    CHUNK_SIZE: int = 1200
+    CHUNK_OVERLAP: int = 100
 
     CORS_ALLOWED_URL: str | None = None
 
