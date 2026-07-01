@@ -16,16 +16,21 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:alpine
-    container_name: self-rag-redis
+  localstack:
+    image: localstack/localstack:latest
+    container_name: self-rag-localstack
     ports:
-      - "6379:6379"
+      - "4566:4566"
+    environment:
+      SERVICES: s3,sqs
+      DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
     volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
+      - localstack_data:/var/lib/localstack
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,21 +52,21 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      REDIS_URL: redis://redis:6379/0
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      localstack:
         condition: service_healthy
     restart: unless-stopped
 
-  celery_worker:
+  sqs_consumer:
     build:
       context: .
       target: runtime
-    container_name: self-rag-celery-worker
+    container_name: self-rag-sqs-consumer
     command: >
-      celery -A app.celery_app worker --loglevel=info -Q ingest
+      python -m app.worker.sqs_consumer
     volumes:
       - ./app:/app/app
       - ./migrations:/app/migrations
@@ -70,20 +75,14 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      REDIS_URL: redis://redis:6379/0
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      localstack:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping -d celery@$$HOSTNAME"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
     restart: unless-stopped
 
 volumes:
   postgres_data:
-  redis_data:
+  localstack_data:

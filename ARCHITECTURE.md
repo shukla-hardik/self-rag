@@ -2,7 +2,7 @@
 
 ## Overview
 
-Self-RAG is a production-grade Retrieval-Augmented Generation API that wraps a LangGraph state machine. Instead of a naive single-pass retrieve-then-answer loop, it runs two nested self-correction loops: one that rewrites the *answer* if it is not grounded in context, and one that rewrites the *question* if the answer is not useful. Streaming is served over HTTP via FastAPI. Document ingestion is handled asynchronously by a Celery worker.
+Self-RAG is a production-grade Retrieval-Augmented Generation API that wraps a LangGraph state machine. Instead of a naive single-pass retrieve-then-answer loop, it runs two nested self-correction loops: one that rewrites the *answer* if it is not grounded in context, and one that rewrites the *question* if the answer is not useful. Streaming is served over HTTP via FastAPI. Document ingestion is decoupled through S3 and SQS: uploads land in S3 and a message is enqueued to SQS, which a standalone async consumer polls and processes. Locally, S3/SQS are emulated by localstack.
 
 ---
 
@@ -19,24 +19,25 @@ Self-RAG is a production-grade Retrieval-Augmented Generation API that wraps a L
 │  Routers:  /api/v1/threads/**   /api/v1/documents/**    │
 │  Static:   SPA at /chat/**                              │
 └──────┬──────────────────────────────────┬───────────────┘
-       │ ainvoke (LangGraph)               │ .delay (Celery)
+       │ ainvoke (LangGraph)               │ upload + send_message
 ┌──────▼───────────────┐        ┌──────────▼──────────────┐
-│    RAGGraph           │        │    Celery Worker        │
-│  (LangGraph compiled) │        │  ingest_document task   │
+│    RAGGraph           │        │    S3 + SQS              │
+│  (LangGraph compiled) │        │  (ingest queue)          │
 └──────┬───────────────┘        └──────────┬──────────────┘
-       │                                    │
+       │                                    │ long-poll
+       │                         ┌──────────▼──────────────┐
+       │                         │    SQS Consumer          │
+       │                         │  downloads from S3,      │
+       │                         │  runs PdfIngestor        │
+       │                         └──────────┬──────────────┘
 ┌──────▼───────────────────────────────────▼──────────────┐
 │             PostgreSQL + pgvector                       │
 │  Tables: users, threads, messages, documents, chunks   │
 │  LangGraph checkpoint tables (langgraph_*)             │
 └─────────────────────────────────────────────────────────┘
-                         │
-                    ┌────▼────┐
-                    │  Redis  │
-                    │ (Celery │
-                    │ broker) │
-                    └─────────┘
 ```
+
+localstack emulates S3 + SQS for local dev; the same `aioboto3` client code targets real AWS in production by unsetting `AWS_ENDPOINT_URL`.
 
 ---
 
@@ -45,7 +46,6 @@ Self-RAG is a production-grade Retrieval-Augmented Generation API that wraps a L
 ```
 app/
 ├── main.py                  # FastAPI app, lifespan setup
-├── celery_app.py            # Celery instance (Redis broker/backend)
 │
 ├── api/
 │   ├── routers/             # HTTP route definitions
@@ -53,7 +53,7 @@ app/
 │   │   ├── document.py      # POST /documents/upload, GET, DELETE
 │   ├── controller/          # Business logic called by routers
 │   │   ├── thread.py        # Runs the RAG graph, manages asyncio.Queue for streaming
-│   │   └── document.py      # Validates PDF, saves file, enqueues Celery task
+│   │   └── document.py      # Validates PDF, uploads to S3, enqueues SQS message
 │   └── models/              # Pydantic request/response schemas
 │
 ├── bot/
@@ -65,7 +65,7 @@ app/
 │   ├── retriever.py         # Embedding-based vector search (pgvector)
 │   └── ingestor/
 │       ├── abstract.py      # BaseIngestor: load → chunk → embed → store
-│       └── pdf_ingestor.py  # Concrete loader using PyPDFLoader
+│       └── pdf_ingestor.py  # Downloads from S3, loads via PyPDFLoader
 │
 ├── db/
 │   ├── client.py            # SQLAlchemy async engine + session factory
@@ -74,7 +74,8 @@ app/
 │   └── services/            # Thin async CRUD wrappers per model
 │
 ├── worker/
-│   └── tasks.py             # ingest_document Celery task
+│   ├── sqs_queue.py         # send_ingest_message / receive_messages / delete_message
+│   └── sqs_consumer.py      # Standalone long-polling consumer, runs PdfIngestor
 │
 ├── middlewares/
 │   ├── api_trace.py         # Request ID injection, latency logging
@@ -82,7 +83,9 @@ app/
 │
 └── core/
     ├── config.py            # Pydantic Settings (env vars)
-    ├── logging.py           # Structlog / contextvars setup
+    ├── aws.py                # aioboto3 session + S3/SQS client factories
+    ├── s3.py                 # upload_bytes / download_bytes / delete_object
+    ├── logging.py            # Structlog / contextvars setup
     └── custom_exceptions.py
 ```
 
@@ -170,17 +173,22 @@ Streaming is delivered via an `asyncio.Queue` injected into `config["configurabl
 POST /api/v1/documents/upload
   │
   ├─ Validate PDF (magic bytes + extension)
-  ├─ Save file to disk (app/uploads/)
-  ├─ Insert Document row (status=PROCESSING)
-  └─ celery_app.task.delay(ingest_document)
+  ├─ Upload bytes to S3 (key: {user_id}/{filename})
+  ├─ Insert Document row (status=PROCESSING, file_path=S3 key)
+  └─ sqs_queue.send_ingest_message()
           │
-          └─ PdfIngestor.ainvoke()
-               ├─ PyPDFLoader.aload()
-               ├─ RecursiveCharacterTextSplitter (600 chars / 150 overlap)
-               ├─ GoogleGenerativeAIEmbeddings (batched, 10/batch, 5 s sleep between batches)
-               │   └─ tenacity retry on HTTP 429 (exponential back-off, max 5 attempts)
-               ├─ ChunkService.create_many() → chunks table (Vector(768))
-               └─ DocumentService.update(status=COMPLETED | FAILED)
+          └─ app.worker.sqs_consumer (long-polling loop)
+               └─ PdfIngestor.ainvoke()
+                    ├─ Download object from S3 → temp file
+                    ├─ PyPDFLoader.aload()
+                    ├─ RecursiveCharacterTextSplitter (600 chars / 150 overlap)
+                    ├─ GoogleGenerativeAIEmbeddings (batched, 10/batch, 5 s sleep between batches)
+                    │   └─ tenacity retry on HTTP 429 (exponential back-off, max 5 attempts)
+                    ├─ ChunkService.create_many() → chunks table (Vector(768))
+                    ├─ DocumentService.update(status=COMPLETED | FAILED)
+                    └─ On success: delete SQS message. On failure: leave message —
+                       becomes visible again after the visibility timeout, moves to
+                       the DLQ after 5 receives (SQS redrive policy)
 ```
 
 ---
@@ -192,7 +200,7 @@ POST /api/v1/documents/upload
 | `users` | `id`, `email`, … | Auth identity |
 | `threads` | `id`, `user_id`, `title` | One conversation per thread |
 | `messages` | `id`, `thread_id`, `role`, `content`, `latency_ms`, `token_count` | Persisted chat history |
-| `documents` | `id`, `user_id`, `filename`, `file_path`, `status`, `error` | Upload tracking |
+| `documents` | `id`, `user_id`, `filename`, `file_path` (S3 key), `status`, `error` | Upload tracking |
 | `chunks` | `id`, `document_id`, `content`, `embedding` (Vector 768), `chunk_index`, `metadata_` | HNSW index on embedding |
 | `langgraph_*` | (managed by LangGraph) | Conversation checkpoints; enables multi-turn resumption |
 
@@ -206,8 +214,8 @@ POST /api/v1/documents/upload
 |---|---|---|---|
 | FastAPI (uvicorn) | Python 3.12 | 8000 | API + SPA serving |
 | PostgreSQL | `pgvector/pgvector:pg17` | 5433 | Primary store + vector index + LangGraph checkpoints |
-| Redis | `redis:alpine` | 6379 | Celery broker and result backend |
-| Celery Worker | `celery_aio_pool` (AsyncIO pool) | — | Background document ingestion |
+| localstack | `localstack/localstack` | 4566 | Local S3 + SQS emulation |
+| SQS Consumer | `python -m app.worker.sqs_consumer` | — | Background document ingestion |
 
 ---
 
@@ -216,6 +224,6 @@ POST /api/v1/documents/upload
 - **Single DB for everything**: PostgreSQL serves as the relational store, the vector database (pgvector), and the LangGraph checkpoint backend. No separate vector DB.
 - **Streaming via asyncio.Queue**: The graph runs in a background `asyncio.Task`; the HTTP response reads from the queue concurrently. This avoids blocking the event loop during long LLM calls.
 - **LangGraph checkpointer**: `AsyncPostgresSaver` stores the full graph state per `thread_id`, enabling multi-turn conversations that resume exactly where they left off.
-- **Celery + AsyncIO pool**: The ingestion worker uses `celery_aio_pool` so async coroutines (embedding API calls, DB writes) work natively inside Celery tasks.
+- **S3 + SQS decoupling**: Uploads go straight to S3 and enqueue an SQS message; a standalone asyncio consumer long-polls the queue and runs the ingestion pipeline, independent of the API process. localstack emulates both locally with no code branching for prod vs. local (only `AWS_ENDPOINT_URL` differs).
 - **Dual loop max = 3**: Both `_MAX_ANS_ITERATION` and `_MAX_QUE_ITERATION` are hardcoded to 3, bounding worst-case LLM calls per query to ~20.
 - **Security Scopes**: Access control enforced via AuthMiddleware (Bearer token).

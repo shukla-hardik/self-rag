@@ -114,7 +114,7 @@ The final approved answer is streamed to the client in one shot. The answer is h
 | Vector store | PostgreSQL + pgvector |
 | ORM | SQLAlchemy 2 (async) |
 | Migrations | Alembic |
-| Background tasks | Celery + Redis |
+| Background tasks | SQS consumer + S3 (localstack locally) |
 | Python | 3.12+ |
 
 ---
@@ -137,9 +137,9 @@ uv sync
 
 # 2. Configure environment
 cp .env.example .env
-# Fill in: DATABASE_URL, GOOGLE_API_KEY, REDIS_URL, etc.
+# Fill in: DATABASE_URL, GOOGLE_API_KEY, AWS_ENDPOINT_URL, etc.
 
-# 3. Start services (Postgres + Redis)
+# 3. Start services (Postgres + localstack for S3/SQS)
 docker-compose up -d
 
 # 4. Run migrations
@@ -148,8 +148,8 @@ alembic upgrade head
 # 5. Start the API
 uvicorn app.main:app --reload
 
-# 6. Start the Celery worker (for document ingestion)
-celery -A app.celery_app worker --loglevel=info
+# 6. Start the SQS consumer (for document ingestion)
+python -m app.worker.sqs_consumer
 ```
 
 ---
@@ -181,7 +181,7 @@ app/
 ├── db/
 │   ├── models/     # SQLAlchemy ORM models
 │   └── services/   # Async DB service layer
-├── worker/         # Celery tasks
+├── worker/         # SQS producer/consumer, ingestion entrypoint
 ├── core/           # Config, logging, exception handling
 └── middlewares/    # Auth, API tracing
 ```

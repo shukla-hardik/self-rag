@@ -1,1 +1,1 @@
-from .tasks import ingest_document
+from . import sqs_queue

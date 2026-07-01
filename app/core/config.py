@@ -15,7 +15,17 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "postgres"
     DB_ECHO: bool = False
 
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # AWS (S3 + SQS, backed by localstack for local dev)
+    AWS_REGION: str = "us-east-1"
+    AWS_ACCESS_KEY_ID: str = "test"
+    AWS_SECRET_ACCESS_KEY: str = "test"
+    AWS_ENDPOINT_URL: str | None = "http://localhost:4566"  # localstack; unset in real AWS
+
+    S3_BUCKET_NAME: str = "self-rag-documents"
+
+    SQS_QUEUE_NAME: str = "self-rag-ingest"
+    SQS_POLL_WAIT_SECONDS: int = 20  # long polling
+    SQS_VISIBILITY_TIMEOUT: int = 300
 
     EMBEDDING_DIM: int = 768  # Change to match your model (768 gemini, 1536 openai-small, 3072 openai-large)
     EMBEDDING_BATCH_SIZE: int = 10

@@ -1,16 +1,12 @@
-import os
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
 from starlette import status
 
 from app.core import logger
+from app.core import s3
 from app.db.services import DocumentService
-from app.worker import tasks
-
-UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+from app.worker import sqs_queue
 
 
 class DocumentController:
@@ -41,9 +37,8 @@ class DocumentController:
             )
 
         await self.document_service.delete_by_id(id=document_id)
-        if os.path.exists(document.file_path):
-            os.remove(document.file_path)
-            logger.info(f"Deleted local file: {document.file_path}")
+        await s3.delete_object(document.file_path)
+        logger.info(f"Deleted S3 object: {document.file_path}")
 
         logger.info(f"Deleted : {document_id}")
 
@@ -55,9 +50,7 @@ class DocumentController:
             source: str | None = None,
     ):
         filename: str = file.filename
-        user_upload_dir = UPLOAD_DIR / str(user_id)
-        os.makedirs(user_upload_dir, exist_ok=True)
-        file_path: str = str(user_upload_dir / filename)
+        s3_key: str = f"{user_id}/{filename}"
 
         if await self.document_service.is_ingested(
                 user_id=user_id,
@@ -76,15 +69,14 @@ class DocumentController:
                 detail="File size exceeds the 2 MB limit"
             )
 
-        # Storing file locally
-        with open(file_path, "wb") as tmp:
-            tmp.write(content)
+        # Uploading file to S3 (localstack in local dev)
+        await s3.upload_bytes(s3_key, content)
 
         # Updating DB with the records
         doc_data = {
             "user_id": user_id,
             "filename": filename,
-            "file_path": file_path,
+            "file_path": s3_key,
         }
         if doc_type:
             doc_data["doc_type"] = doc_type
@@ -92,11 +84,11 @@ class DocumentController:
             doc_data["source"] = source
         document = await self.document_service.create(doc_data)
 
-        tasks.ingest_document.delay(
+        await sqs_queue.send_ingest_message(
             document_id=document.id,
             user_id=user_id,
             filename=filename,
-            file_path=file_path
+            s3_key=s3_key,
         )
 
     async def _validate_pdf_doc(self, file):
